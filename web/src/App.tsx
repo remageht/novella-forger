@@ -108,6 +108,7 @@ export const App: React.FC = () => {
             nameMap={selectedNovella.nameMap}
             novellaMarkdown={selectedNovella.novellaMarkdown}
             filename={selectedNovella.filename}
+            demo={'demo' in selectedNovella ? Boolean(selectedNovella.demo) : false}
             gitCommit={selectedNovella.gitCommit}
             onBack={handleBackToCreate}
           />

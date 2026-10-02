@@ -25,6 +25,7 @@ export interface GenerateResponse {
   nameMap: NameMapItem[];
   novellaMarkdown: string;
   filename: string;
+  demo?: boolean;
   gitCommit?: {
     success: boolean;
     message: string;

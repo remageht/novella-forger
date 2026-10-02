@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Copy, Check, Download, GitCommit, Tag, Calendar, Layers, BookOpen, FileText } from 'lucide-react';
+import { Copy, Check, Download, GitCommit, Tag, Calendar, Layers, BookOpen, FileText, FlaskConical } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { NameMapItem } from '../types';
@@ -12,6 +12,7 @@ interface NovellaViewerProps {
   nameMap: NameMapItem[];
   novellaMarkdown: string;
   filename?: string;
+  demo?: boolean;
   gitCommit?: {
     success: boolean;
     message: string;
@@ -32,6 +33,7 @@ export const NovellaViewer: React.FC<NovellaViewerProps> = ({
   nameMap,
   novellaMarkdown,
   filename,
+  demo,
   gitCommit,
   onBack
 }) => {
@@ -135,10 +137,16 @@ export const NovellaViewer: React.FC<NovellaViewerProps> = ({
               {title}
             </h1>
             <div className="flex flex-wrap items-center gap-3 text-xs text-stone-400">
-              <span className="flex items-center text-amber-300 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20 font-medium">
-                <Tag className="w-3 h-3 mr-1" />
-                {genreUsed}
-              </span>
+                <span className="flex items-center text-amber-300 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20 font-medium">
+                  <Tag className="w-3 h-3 mr-1" />
+                  {genreUsed}
+                </span>
+                {demo && (
+                  <span className="flex items-center text-sky-300 bg-sky-500/10 px-2.5 py-1 rounded-full border border-sky-500/30 font-medium" title="Ключ Gemini не задан — показана пример-новелла. Конвейер (сейв + коммит) отработал по-настоящему.">
+                    <FlaskConical className="w-3 h-3 mr-1" />
+                    Демо-режим
+                  </span>
+                )}
               {date && (
                 <span className="flex items-center text-stone-400 bg-stone-800/80 px-2.5 py-1 rounded-full border border-stone-700/50">
                   <Calendar className="w-3 h-3 mr-1 text-stone-400" />

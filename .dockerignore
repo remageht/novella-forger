@@ -1,0 +1,16 @@
+node_modules/
+server/node_modules/
+web/node_modules/
+server/dist/
+web/dist/
+.git/
+.gitignore
+.env
+*.env
+!*.env.example
+*.wav
+*.mp3
+venv/
+venv-qwen/
+models/
+__pycache__/
