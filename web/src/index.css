@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #0c0a09;
+    color: #e7e5e4;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+.font-serif-novel {
+  font-family: 'Lora', 'Georgia', serif;
+}
+
+.font-cinzel {
+  font-family: 'Cinzel', serif;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1c1917;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #44403c;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #78716c;
+}
+
+/* Prose chapter typography */
+.prose-novella h2 {
+  font-family: 'Cinzel', serif;
+  color: #fbbf24;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid rgba(251, 191, 36, 0.2);
+  padding-bottom: 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.prose-novella p {
+  margin-bottom: 1.25rem;
+  line-height: 1.85;
+  color: #d6d3d1;
+  font-size: 1.075rem;
+}
+
+.prose-novella blockquote {
+  border-left: 3px solid #d97706;
+  padding-left: 1rem;
+  margin-left: 0;
+  font-style: italic;
+  color: #a8a29e;
+}
