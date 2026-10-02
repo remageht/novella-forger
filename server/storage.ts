@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, '..');
+const projectRoot = path.basename(__dirname) === 'dist'
+  ? path.resolve(__dirname, '..', '..')
+  : path.resolve(__dirname, '..');
 const outputDir = path.join(projectRoot, 'stories', 'output');
 
 export interface NameMapItem {

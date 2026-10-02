@@ -6,7 +6,9 @@ import { NameMapItem } from './storage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, '..');
+const projectRoot = path.basename(__dirname) === 'dist'
+  ? path.resolve(__dirname, '..', '..')
+  : path.resolve(__dirname, '..');
 const systemPromptPath = path.join(projectRoot, 'prompts', 'novella-system.md');
 
 export interface GenerateResult {

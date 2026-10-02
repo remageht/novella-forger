@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url';
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, '..');
+const projectRoot = path.basename(__dirname) === 'dist'
+  ? path.resolve(__dirname, '..', '..')
+  : path.resolve(__dirname, '..');
 
 export async function commitNovella(filePath: string, title: string): Promise<{ success: boolean; message: string }> {
   try {

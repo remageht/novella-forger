@@ -10,7 +10,9 @@ import { commitNovella } from './git.js';
 // Setup environment variables (look in server/ and project root)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, '..');
+const projectRoot = path.basename(__dirname) === 'dist'
+  ? path.resolve(__dirname, '..', '..')
+  : path.resolve(__dirname, '..');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 dotenv.config({ path: path.join(projectRoot, '.env') });
