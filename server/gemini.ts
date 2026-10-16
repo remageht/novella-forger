@@ -10,6 +10,37 @@ const projectRoot = path.basename(__dirname) === 'dist'
   ? path.resolve(__dirname, '..', '..')
   : path.resolve(__dirname, '..');
 const systemPromptPath = path.join(projectRoot, 'prompts', 'novella-system.md');
+const referencesDir = path.join(projectRoot, 'references');
+
+const SHARED_REF_FILES = ['metafora-katalog.md', 'imena.md'];
+const ALL_GENRE_REF_FILES = ['kultivacia.md', 'isekai.md', 'postapokalipsis.md', 'mago-industria.md', 'magiya.md'];
+
+function genreRefFiles(genre: string): string[] {
+  const g = (genre || '').toLowerCase();
+  const files: string[] = [];
+  if (g.includes('культивац')) files.push('kultivacia.md');
+  if (g.includes('исекай') || g.includes('трансмиграц') || g.includes('переселен')) files.push('isekai.md');
+  if (g.includes('постап')) files.push('postapokalipsis.md');
+  if (g.includes('индустриал')) files.push('mago-industria.md');
+  if (g.includes('магия') || g.includes('магичес')) files.push('magiya.md');
+  return files.length > 0 ? files : ALL_GENRE_REF_FILES;
+}
+
+// Genre reference materials are read fresh on every request:
+// editing files under references/ applies without a server restart.
+async function loadReferences(genre: string): Promise<string> {
+  const files = [...SHARED_REF_FILES, ...genreRefFiles(genre)];
+  const parts: string[] = [];
+  for (const file of files) {
+    try {
+      const content = await fs.readFile(path.join(referencesDir, file), 'utf-8');
+      parts.push(`#### ${file}\n${content.trim()}`);
+    } catch {
+      // Missing reference file — generation continues without it
+    }
+  }
+  return parts.join('\n\n');
+}
 
 export interface GenerateResult {
   title: string;
@@ -27,6 +58,9 @@ export async function generateNovella(story: string, genre: string): Promise<Gen
   // Load system prompt from prompts/novella-system.md
   const systemPrompt = await fs.readFile(systemPromptPath, 'utf-8');
 
+  // Load genre reference materials (terminology, tropes, name styles)
+  const references = await loadReferences(genre);
+
   const ai = new GoogleGenAI({ apiKey });
 
   let userPrompt = `РЕАЛЬНАЯ ИСТОРИЯ ЧЕЛОВЕКА:\n"""\n${story.trim()}\n"""\n\n`;
@@ -34,6 +68,9 @@ export async function generateNovella(story: string, genre: string): Promise<Gen
     userPrompt += `ПОЖЕЛАНИЕ ПО ЖАНРУ: "${genre}". Используй этот жанр как основной доминант мира.\n`;
   } else {
     userPrompt += `ЖАНР: Выбери наилучший жанр-доминант + подслой автоматически согласно правилам Хрониста.\n`;
+  }
+  if (references) {
+    userPrompt += `\nСПРАВОЧНЫЕ МАТЕРИАЛЫ ХРОНИСТА (используй терминологию, тропы и стиль имен оттуда; материалы — источник вдохновения, не цитируй дословно):\n${references}\n`;
   }
   userPrompt += `\nСледуй строго всем 6 шагам Хрониста. Напиши масштабную новеллу со всеми частями (Пролог: Врата, Глава 1, Глава 2, Глава 3: Трибуляция, Глава 4: Цена, Эпилог: Отголосок) и верни результат строго в JSON.`;
 

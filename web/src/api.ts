@@ -1,20 +1,35 @@
 import { GenerateResponse, NovellaItem } from './types';
 
+const GENERATE_TIMEOUT_MS = 10 * 60 * 1000;
+
 export async function generateNovellaApi(story: string, genre: string): Promise<GenerateResponse> {
-  const response = await fetch('/api/generate', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ story, genre })
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GENERATE_TIMEOUT_MS);
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `Ошибка сервера (${response.status})`);
+  try {
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ story, genre }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Ошибка сервера (${response.status})`);
+    }
+
+    return response.json();
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Превышено время ожидания генерации (10 минут). Попробуйте ещё раз.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-
-  return response.json();
 }
 
 export async function fetchNovellasApi(): Promise<NovellaItem[]> {

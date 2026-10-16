@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateNovella } from './gemini.js';
@@ -21,8 +22,22 @@ dotenv.config({ path: path.join(projectRoot, '.env') });
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+// Behind a reverse proxy (nginx/render/fly) trust X-Forwarded-For so the rate
+// limiter sees real client IPs. Off by default to prevent IP spoofing.
+if (process.env.TRUST_PROXY) {
+  app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : Number(process.env.TRUST_PROXY) || 1);
+}
+
+// CORS only when explicitly configured (comma-separated origins).
+// Default deploy is same-origin: the server serves the frontend itself.
+const corsOrigin = process.env.CORS_ORIGIN?.trim();
+if (corsOrigin) {
+  app.use(cors({ origin: corsOrigin.split(',').map(o => o.trim()) }));
+}
+
+app.use(express.json({ limit: '1mb' }));
+
+const MAX_STORY_LENGTH = 30000;
 
 // Anti-abuse: generation burns Gemini quota, max 10/hour per IP
 const generateLimiter = rateLimit({
@@ -77,6 +92,12 @@ app.post('/api/generate', generateLimiter, async (req: Request, res: Response) =
   if (!story || typeof story !== 'string' || story.trim().length < 20) {
     return res.status(400).json({
       error: 'Пожалуйста, вставьте реальную историю (хотя бы несколько предложений).'
+    });
+  }
+
+  if (story.length > MAX_STORY_LENGTH) {
+    return res.status(400).json({
+      error: `История слишком длинная (максимум ${MAX_STORY_LENGTH} символов).`
     });
   }
 
@@ -139,11 +160,39 @@ app.post('/api/generate', generateLimiter, async (req: Request, res: Response) =
   }
 });
 
+// Unknown API routes -> JSON 404
+app.use('/api', (req: Request, res: Response) => {
+  res.status(404).json({ error: 'Метод API не найден' });
+});
+
 // Serve production frontend build (single-container deploy).
 // In dev (tsx) web/dist may be absent — static middleware then just passes through.
-app.use(express.static(path.join(projectRoot, 'web', 'dist')));
+const webDist = path.join(projectRoot, 'web', 'dist');
+app.use(express.static(webDist));
 
-app.listen(PORT, () => {
+// SPA fallback: any non-API GET goes to index.html
+app.get(/^\/(?!api\/).*/, (req: Request, res: Response, next) => {
+  const indexPath = path.join(webDist, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    next();
+  }
+});
+
+const server = app.listen(PORT, () => {
   console.log(`[Novella-Forger Server] Running on http://localhost:${PORT}`);
   console.log(`[Novella-Forger Server] API key configured: ${Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here')}`);
 });
+
+// Long generations (up to 7000 words) can exceed default request timeouts
+server.requestTimeout = 10 * 60 * 1000;
+
+// Graceful shutdown for docker / paas platforms
+const shutdown = (signal: string) => {
+  console.log(`[Novella-Forger Server] ${signal} received, shutting down...`);
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 10_000).unref();
+};
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

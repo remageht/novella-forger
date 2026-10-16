@@ -81,6 +81,7 @@ novella-forger/
 │   └── SKILL.md            # Каноничный навык Хрониста
 ├── prompts/
 │   └── novella-system.md   # Системный промпт для сервера и Gemini API
+├── references/             # Справочники жанров, метафор и имен (см. references/README.md)
 ├── GEMINI.md               # Always-on правила
 ├── stories/
 │   ├── input/
@@ -97,6 +98,9 @@ novella-forger/
 │       ├── components/     # UI компоненты (форма, ридер, карта имен, лента)
 │       ├── api.ts          # Клиент API
 │       └── types.ts        # Типы TypeScript
+├── Dockerfile              # Прод-сборка (API + статика в одном контейнере)
+├── docker-compose.yml      # Локальный/серверный запуск
+├── .github/workflows/      # CI + публикация образа в GHCR
 └── README.md
 ```
 
@@ -138,17 +142,53 @@ novella-forger/
 
 ---
 
-## 🐳 Деплой через Docker
+## 📚 Справочники Хрониста (references/)
+
+Сервер автоматически подкладывает их в промпт при генерации:
+
+- `references/metafora-katalog.md` — каталог «событие → метафора» по всем жанрам (всегда)
+- `references/imena.md` — банк имен по ролям + правила проверки (всегда)
+- `references/kultivacia.md`, `isekai.md`, `postapokalipsis.md`, `mago-industria.md`, `magiya.md` — жанровые справочники
+
+Выбор: жанр из формы → его справочник; «авто» → все жанровые файлы.
+Файлы читаются при каждом запросе — правки применяются без перезапуска сервера.
+
+---
+
+## 🐳 Прод-деплой
+
+### Вариант 1: Docker Compose (VPS или локально)
 
 ```bash
-# Сборка образа
-docker build -t novella-forger .
-
-# Запуск (без ключа = демо-режим; stories/output переживет рестарт через volume)
-docker run -d --name novella -p 3001:3001 \
-  -e GEMINI_API_KEY=ваш_ключ_или_пусто \
-  -v novella-stories:/app/stories/output \
-  novella-forger
+# из корня репозитория (.env рядом или GEMINI_API_KEY в окружении)
+GEMINI_API_KEY=ваш_ключ docker compose up -d --build
+# http://localhost:3001 — API + фронт в одном контейнере
 ```
 
-Один контейнер отдает и API, и фронт (`http://localhost:3001`, статика `web/dist`).
+### Вариант 2: готовый образ из GHCR
+
+Каждый push в `main` публикует `ghcr.io/remageht/novella-forger:latest`
+(workflow `.github/workflows/docker-publish.yml`; тег `v*` → версионный образ).
+
+```bash
+docker run -d --name novella -p 3001:3001 \
+  -e GEMINI_API_KEY=ваш_ключ \
+  -v novella-stories:/app/stories/output \
+  ghcr.io/remageht/novella-forger:latest
+```
+
+Первый образ появится после первого пуша workflow. Видимость пакета:
+GitHub → Packages → novella-forger → Settings.
+
+### Переменные окружения
+
+| Переменная | Назначение | По умолчанию |
+|---|---|---|
+| `GEMINI_API_KEY` | ключ Gemini; пусто = демо-режим | — |
+| `PORT` | порт сервера | 3001 |
+| `TRUST_PROXY` | доверять X-Forwarded-For (за nginx/Cloudflare) | выкл |
+| `CORS_ORIGIN` | разрешенные origin через запятую (если фронт отдельно) | выкл (same-origin) |
+
+### CI
+
+`.github/workflows/ci.yml` на каждый push/PR: сборка → смоук-тест API → сборка Docker-образа.

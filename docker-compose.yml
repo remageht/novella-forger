@@ -1,0 +1,21 @@
+services:
+  novella-forger:
+    build: .
+    image: ghcr.io/remageht/novella-forger:latest
+    container_name: novella-forger
+    ports:
+      - "3001:3001"
+    environment:
+      # Пусто = демо-режим. Ключ можно задать здесь или через .env рядом с compose.
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # Раскомментируй, если контейнер стоит за reverse-proxy (nginx, Cloudflare, траефик):
+      # - TRUST_PROXY=true
+      # Или, если фронт на другом домене, укажи разрешенные origin через запятую:
+      # - CORS_ORIGIN=https://example.com
+    volumes:
+      # Новеллы переживают рестарт и пересборку контейнера
+      - stories:/app/stories/output
+    restart: unless-stopped
+
+volumes:
+  stories:

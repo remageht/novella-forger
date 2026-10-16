@@ -1,5 +1,6 @@
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
+import fsSync from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,6 +13,13 @@ const projectRoot = path.basename(__dirname) === 'dist'
 
 export async function commitNovella(filePath: string, title: string): Promise<{ success: boolean; message: string }> {
   try {
+    if (!fsSync.existsSync(path.join(projectRoot, '.git'))) {
+      return {
+        success: false,
+        message: 'git-репозиторий не найден (например, при запуске в контейнере) — коммит пропущен'
+      };
+    }
+
     const relativePath = path.relative(projectRoot, filePath).replace(/\\/g, '/');
     const commitMsg = `novella: ${title.replace(/["\\]/g, '')}`;
     
