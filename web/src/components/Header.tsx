@@ -29,7 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
                   NOVELLA FORGER
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 font-medium">
-                  Хронист v1.0
+                  Хронист v2.0
                 </span>
               </div>
               <p className="text-xs text-stone-400 hidden sm:block">

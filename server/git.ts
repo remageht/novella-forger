@@ -13,6 +13,10 @@ const projectRoot = path.basename(__dirname) === 'dist'
 
 export async function commitNovella(filePath: string, title: string): Promise<{ success: boolean; message: string }> {
   try {
+    if (process.env.DISABLE_GIT_COMMIT === '1') {
+      return { success: false, message: 'автокоммит отключен через DISABLE_GIT_COMMIT=1' };
+    }
+
     if (!fsSync.existsSync(path.join(projectRoot, '.git'))) {
       return {
         success: false,

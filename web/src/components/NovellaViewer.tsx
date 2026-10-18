@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from 'react';
-import { Copy, Check, Download, GitCommit, Tag, Calendar, Layers, BookOpen, FileText, FlaskConical } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Copy, Check, Download, GitCommit, Tag, Calendar, Layers, BookOpen, FileText, FlaskConical, Volume2, VolumeX } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { NameMapItem } from '../types';
 import { NameMapCard } from './NameMapCard';
+import { isSpeechSupported, speakText, stopSpeaking } from '../speech';
 
 interface NovellaViewerProps {
   title: string;
@@ -40,6 +41,19 @@ export const NovellaViewer: React.FC<NovellaViewerProps> = ({
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<'all' | 'chapters'>('chapters');
   const [selectedChapterIndex, setSelectedChapterIndex] = useState(0);
+  const [listening, setListening] = useState(false);
+
+  // Не даём озвучке пережить уход со страницы
+  useEffect(() => () => stopSpeaking(), []);
+
+  const handleToggleSpeech = () => {
+    if (listening) {
+      stopSpeaking();
+      setListening(false);
+    } else {
+      speakText(novellaMarkdown, setListening);
+    }
+  };
 
   // Parse markdown into distinct chapters based on '## ' headers
   const chapters: Chapter[] = useMemo(() => {
@@ -164,6 +178,25 @@ export const NovellaViewer: React.FC<NovellaViewerProps> = ({
 
           {/* Action buttons */}
           <div className="flex items-center space-x-3 shrink-0">
+            {isSpeechSupported() && (
+              <button
+                onClick={handleToggleSpeech}
+                className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700/80 text-stone-200 border border-stone-700 text-sm font-medium transition-all shadow-sm active:scale-95"
+                title="Озвучить новеллу голосом браузера"
+              >
+                {listening ? (
+                  <>
+                    <VolumeX className="w-4 h-4 text-rose-400" />
+                    <span className="text-rose-400">Стоп</span>
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="w-4 h-4 text-stone-400" />
+                    <span>Слушать</span>
+                  </>
+                )}
+              </button>
+            )}
             <button
               onClick={handleCopy}
               className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700/80 text-stone-200 border border-stone-700 text-sm font-medium transition-all shadow-sm active:scale-95"

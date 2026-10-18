@@ -21,10 +21,8 @@ const GENRE_DESCRIPTIONS: Record<GenreType, string> = {
 const CHRONICLER_PHASES = [
   'ШАГ 1: Разбор хронологии и ролей участников...',
   'ШАГ 2: Определение жанра-доминанта и законов мира...',
-  'ШАГ 3: Переплавка реальных событий в метафоры мира...',
-  'ШАГ 4: Ковка имен по формуле [Суть поступка + ранг]...',
-  'ШАГ 5: Сборка глав (Пролог-Врата, Завязка, Трибуляция, Цена, Эпилог)...',
-  'ШАГ 6: Автосейв и фиксация в скрижалях...'
+  'ШАГ 3: Ковка карты имен [Суть поступка + ранг]...',
+  'ШАГ 4: Выстраивание структуры из шести глав...'
 ];
 
 export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onGenerate, isLoading }) => {
@@ -159,14 +157,14 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onGenerate, isLoad
                   <>
                     <Loader2 className="w-5 h-5 animate-spin text-amber-200" />
                     <span className="font-cinzel tracking-wider text-base">
-                      Ковка новеллы...
+                      Строим план...
                     </span>
                   </>
                 ) : (
                   <>
                     <Sparkles className="w-5 h-5 text-amber-200" />
                     <span className="font-cinzel tracking-wider text-base">
-                      Сгенерировать новеллу
+                      Построить план новеллы
                     </span>
                   </>
                 )}
@@ -182,7 +180,7 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onGenerate, isLoad
                 <span>{CHRONICLER_PHASES[phaseIndex]}</span>
               </div>
               <p className="text-[11px] text-stone-500 mt-1">
-                Генерация объема 3000-7000 слов и структурирование глав занимает около 15-30 секунд
+                Хронист разберет историю и построит план с картой имен — вы проверите и утвердите его перед письмом. Обычно 15-30 секунд.
               </p>
             </div>
           )}

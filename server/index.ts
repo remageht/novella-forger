@@ -2,10 +2,12 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateNovella } from './gemini.js';
+import { createPlan, writeChapter, buildDemoPlan, splitChapters, hasApiKey, NovellaPlan } from './planner.js';
 import { saveNovella, getNovellasList, getNovellaByFilename } from './storage.js';
 import { commitNovella } from './git.js';
 
@@ -48,6 +50,67 @@ const generateLimiter = rateLimit({
   message: { error: 'Слишком много генераций. Лимит 10 в час с одного IP, попробуйте позже.' }
 });
 
+const planLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 12,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Слишком много планов. Лимит 12 в час с одного IP, попробуйте позже.' }
+});
+
+const writeLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Слишком много запросов записи. Попробуйте позже.' }
+});
+
+// Two-phase sessions: plan -> review (правки карты имен) -> write
+interface PlanSession {
+  story: string;
+  genre: string;
+  plan: NovellaPlan;
+  createdAt: number;
+}
+
+const planSessions = new Map<string, PlanSession>();
+const PLAN_TTL_MS = 30 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, session] of planSessions) {
+    if (now - session.createdAt > PLAN_TTL_MS) planSessions.delete(id);
+  }
+}, 5 * 60 * 1000).unref();
+
+function validateStory(story: unknown): string | null {
+  if (!story || typeof story !== 'string' || story.trim().length < 20) {
+    return 'Пожалуйста, вставьте реальную историю (хотя бы несколько предложений).';
+  }
+  if (story.length > MAX_STORY_LENGTH) {
+    return `История слишком длинная (максимум ${MAX_STORY_LENGTH} символов).`;
+  }
+  return null;
+}
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+function chunkText(text: string, size: number): string[] {
+  const chunks: string[] = [];
+  for (let i = 0; i < text.length; i += size) chunks.push(text.slice(i, i + size));
+  return chunks;
+}
+
+let demoSectionsCache: string[] | null = null;
+async function getDemoSections(): Promise<string[]> {
+  if (demoSectionsCache) return demoSectionsCache;
+  const example = await getNovellaByFilename('example.md');
+  demoSectionsCache = example
+    ? splitChapters(example.novellaMarkdown).map(s => `## ${s.title}\n\n${s.body}`)
+    : [];
+  return demoSectionsCache;
+}
+
 // Health check and config status
 app.get('/api/health', (req: Request, res: Response) => {
   const hasKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'your_gemini_api_key_here');
@@ -89,16 +152,9 @@ app.get('/api/novellas/:filename', async (req: Request, res: Response) => {
 app.post('/api/generate', generateLimiter, async (req: Request, res: Response) => {
   const { story, genre = 'авто' } = req.body;
 
-  if (!story || typeof story !== 'string' || story.trim().length < 20) {
-    return res.status(400).json({
-      error: 'Пожалуйста, вставьте реальную историю (хотя бы несколько предложений).'
-    });
-  }
-
-  if (story.length > MAX_STORY_LENGTH) {
-    return res.status(400).json({
-      error: `История слишком длинная (максимум ${MAX_STORY_LENGTH} символов).`
-    });
+  const storyError = validateStory(story);
+  if (storyError) {
+    return res.status(400).json({ error: storyError });
   }
 
   try {
@@ -157,6 +213,147 @@ app.post('/api/generate', generateLimiter, async (req: Request, res: Response) =
     res.status(500).json({
       error: error.message || 'Ошибка генерации новеллы'
     });
+  }
+});
+
+// POST /api/plan { story, genre } — фаза 1: разбор + жанр + карта имен + структура
+app.post('/api/plan', planLimiter, async (req: Request, res: Response) => {
+  const { story, genre = 'авто' } = req.body;
+
+  const storyError = validateStory(story);
+  if (storyError) {
+    return res.status(400).json({ error: storyError });
+  }
+
+  try {
+    let plan: NovellaPlan;
+    let demo = false;
+    if (!hasApiKey()) {
+      const demoPlan = await buildDemoPlan();
+      if (!demoPlan) {
+        return res.status(503).json({ error: 'Демо-режим: файл stories/output/example.md не найден, а ключ GEMINI_API_KEY не задан.' });
+      }
+      plan = demoPlan;
+      demo = true;
+    } else {
+      plan = await createPlan(story, genre);
+      console.log(`[Plan] Built: "${plan.title}" (${plan.genreUsed})`);
+    }
+
+    const planId = crypto.randomUUID();
+    planSessions.set(planId, { story, genre, plan, createdAt: Date.now() });
+    res.json({ planId, plan, demo });
+  } catch (error: any) {
+    console.error('[Plan Error]:', error);
+    res.status(500).json({ error: error.message || 'Ошибка построения плана' });
+  }
+});
+
+// POST /api/write { planId, nameMap? } — фаза 2: потоковая запись глав (NDJSON)
+app.post('/api/write', writeLimiter, async (req: Request, res: Response) => {
+  const { planId, nameMap } = req.body;
+
+  const session = planId ? planSessions.get(String(planId)) : undefined;
+  if (!session) {
+    return res.status(404).json({ error: 'План не найден или устарел (сессии живут 30 минут). Постройте план заново.' });
+  }
+
+  // Правки карты имен от пользователя (меняются только имя и пояснение)
+  if (Array.isArray(nameMap)) {
+    session.plan.nameMap = session.plan.nameMap.map((item, i) => {
+      const edited = nameMap[i];
+      if (edited && typeof edited.novelName === 'string' && edited.novelName.trim()) {
+        return {
+          ...item,
+          novelName: edited.novelName.trim().slice(0, 120),
+          significance: typeof edited.significance === 'string' ? edited.significance : item.significance
+        };
+      }
+      return item;
+    });
+  }
+
+  res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const send = (event: Record<string, unknown>) => {
+    try {
+      res.write(JSON.stringify(event) + '\n');
+    } catch {
+      // клиент отключился
+    }
+  };
+
+  const abort = new AbortController();
+  req.on('close', () => abort.abort());
+
+  const demo = !hasApiKey();
+
+  try {
+    const parts: string[] = [];
+    const total = session.plan.chapters.length;
+
+    for (let i = 0; i < total; i++) {
+      if (abort.signal.aborted) return;
+      send({ type: 'chapter_start', index: i, title: session.plan.chapters[i].title });
+
+      let chapterText = '';
+      if (demo) {
+        const sections = await getDemoSections();
+        const section = sections[Math.min(i, sections.length - 1)] || '';
+        for (const piece of chunkText(section, 300)) {
+          if (abort.signal.aborted) return;
+          send({ type: 'chapter_delta', index: i, text: piece });
+          await sleep(40);
+        }
+        chapterText = section;
+      } else {
+        for await (const delta of writeChapter(session.plan, i, session.story, parts.join('\n\n'), abort.signal)) {
+          send({ type: 'chapter_delta', index: i, text: delta });
+          chapterText += delta;
+        }
+      }
+
+      if (!chapterText.trim()) {
+        throw new Error(`Модель вернула пустую главу ${i + 1}`);
+      }
+      if (!/^##\s/m.test(chapterText.trimStart())) {
+        chapterText = `## ${session.plan.chapters[i].title}\n\n${chapterText}`;
+      }
+      parts.push(chapterText.trim());
+      send({ type: 'chapter_done', index: i });
+    }
+
+    const novellaMarkdown = parts.join('\n\n');
+    const saved = await saveNovella({
+      title: session.plan.title,
+      genreUsed: session.plan.genreUsed,
+      nameMap: session.plan.nameMap,
+      novellaMarkdown,
+      originalStory: session.story
+    });
+    const gitResult = await commitNovella(saved.fullPath, session.plan.title);
+    planSessions.delete(String(planId));
+
+    send({
+      type: 'done',
+      title: session.plan.title,
+      genreUsed: session.plan.genreUsed,
+      nameMap: session.plan.nameMap,
+      novellaMarkdown,
+      filename: saved.filename,
+      gitCommit: gitResult,
+      demo
+    });
+    res.end();
+  } catch (error: any) {
+    console.error('[Write Error]:', error);
+    if (!abort.signal.aborted) {
+      send({ type: 'error', message: error.message || 'Ошибка записи новеллы' });
+    }
+    res.end();
   }
 });
 

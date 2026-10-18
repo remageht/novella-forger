@@ -42,3 +42,42 @@ export const GENRE_OPTIONS = [
 ] as const;
 
 export type GenreType = typeof GENRE_OPTIONS[number];
+
+export interface PlanChapter {
+  title: string;
+  summary: string;
+}
+
+export interface NovellaPlan {
+  title: string;
+  genreUsed: string;
+  events: string[];
+  emotion: string;
+  moral: string;
+  nameMap: NameMapItem[];
+  chapters: PlanChapter[];
+}
+
+export interface PlanResponse {
+  planId: string;
+  plan: NovellaPlan;
+  demo?: boolean;
+}
+
+export type WriteEvent =
+  | { type: 'chapter_start'; index: number; title: string }
+  | { type: 'chapter_delta'; index: number; text: string }
+  | { type: 'chapter_done'; index: number }
+  | {
+      type: 'done';
+      title: string;
+      genreUsed: string;
+      nameMap: NameMapItem[];
+      novellaMarkdown: string;
+      filename: string;
+      gitCommit?: { success: boolean; message: string };
+      demo: boolean;
+    }
+  | { type: 'error'; message: string };
+
+export type WriteDoneEvent = Extract<WriteEvent, { type: 'done' }>;

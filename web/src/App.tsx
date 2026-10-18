@@ -3,18 +3,30 @@ import { Header } from './components/Header';
 import { GeneratorForm } from './components/GeneratorForm';
 import { NovellaViewer } from './components/NovellaViewer';
 import { NovellaFeed } from './components/NovellaFeed';
-import { generateNovellaApi, fetchNovellasApi, checkHealthApi } from './api';
-import { GenreType, NovellaItem, GenerateResponse } from './types';
+import { PlanReview } from './components/PlanReview';
+import { WritingView } from './components/WritingView';
+import { createPlanApi, writeNovellaApi, fetchNovellasApi, checkHealthApi } from './api';
+import { GenreType, NovellaItem, GenerateResponse, NameMapItem, PlanResponse, WriteEvent } from './types';
 import { AlertCircle, X } from 'lucide-react';
+
+type Stage = 'form' | 'plan' | 'writing' | 'viewer';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'create' | 'feed'>('create');
+  const [stage, setStage] = useState<Stage>('form');
   const [isLoading, setIsLoading] = useState(false);
   const [feedLoading, setFeedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasApiKey, setHasApiKey] = useState(true);
   const [novellas, setNovellas] = useState<NovellaItem[]>([]);
   const [selectedNovella, setSelectedNovella] = useState<GenerateResponse | NovellaItem | null>(null);
+
+  // Two-phase flow state
+  const [planData, setPlanData] = useState<PlanResponse | null>(null);
+  const [approvedNameMap, setApprovedNameMap] = useState<NameMapItem[] | null>(null);
+  const [writeChapters, setWriteChapters] = useState<string[]>([]);
+  const [writeCurrent, setWriteCurrent] = useState(0);
+  const [writeError, setWriteError] = useState<string | null>(null);
 
   // Initial load
   useEffect(() => {
@@ -43,26 +55,85 @@ export const App: React.FC = () => {
     }
   };
 
+  // Фаза 1: строим план
   const handleGenerate = async (story: string, genre: GenreType) => {
     try {
       setIsLoading(true);
       setError(null);
-      const result = await generateNovellaApi(story, genre);
-      setSelectedNovella(result);
-      await loadNovellas();
+      setSelectedNovella(null);
+      const plan = await createPlanApi(story, genre);
+      setPlanData(plan);
+      setStage('plan');
     } catch (err: any) {
-      setError(err.message || 'Ошибка генерации');
+      setError(err.message || 'Ошибка построения плана');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Фаза 2: пишем новеллу потоком
+  const startWriting = async (nameMap: NameMapItem[]) => {
+    if (!planData) return;
+    setApprovedNameMap(nameMap);
+    setError(null);
+    setWriteError(null);
+    setWriteChapters(planData.plan.chapters.map(() => ''));
+    setWriteCurrent(0);
+    setStage('writing');
+
+    try {
+      const done = await writeNovellaApi(planData.planId, nameMap, (event: WriteEvent) => {
+        if (event.type === 'chapter_start') {
+          setWriteCurrent(event.index);
+        } else if (event.type === 'chapter_delta') {
+          setWriteChapters(prev => {
+            const next = [...prev];
+            next[event.index] = (next[event.index] || '') + event.text;
+            return next;
+          });
+        }
+      });
+
+      setSelectedNovella({
+        title: done.title,
+        genreUsed: done.genreUsed,
+        nameMap: done.nameMap,
+        novellaMarkdown: done.novellaMarkdown,
+        filename: done.filename,
+        gitCommit: done.gitCommit,
+        demo: done.demo
+      });
+      setStage('viewer');
+      setPlanData(null);
+      await loadNovellas();
+    } catch (err: any) {
+      setWriteError(err.message || 'Ошибка записи новеллы');
+    }
+  };
+
+  const handleApprovePlan = (nameMap: NameMapItem[]) => {
+    startWriting(nameMap);
+  };
+
+  const handleRetryWrite = () => {
+    if (approvedNameMap) startWriting(approvedNameMap);
+  };
+
+  const handleBackToForm = () => {
+    setPlanData(null);
+    setStage('form');
+    setError(null);
+    setWriteError(null);
   };
 
   const handleSelectFromFeed = (item: NovellaItem) => {
     setSelectedNovella(item);
   };
 
-  const handleBackToCreate = () => {
+  const handleBackFromViewer = () => {
     setSelectedNovella(null);
+    setStage('form');
+    setPlanData(null);
   };
 
   return (
@@ -71,6 +142,9 @@ export const App: React.FC = () => {
         activeTab={activeTab}
         setActiveTab={tab => {
           setActiveTab(tab);
+          setSelectedNovella(null);
+          setPlanData(null);
+          setStage('form');
           if (tab === 'feed') {
             loadNovellas();
           }
@@ -110,7 +184,24 @@ export const App: React.FC = () => {
             filename={selectedNovella.filename}
             demo={'demo' in selectedNovella ? Boolean(selectedNovella.demo) : false}
             gitCommit={selectedNovella.gitCommit}
-            onBack={handleBackToCreate}
+            onBack={handleBackFromViewer}
+          />
+        ) : stage === 'writing' && planData ? (
+          <WritingView
+            plan={planData.plan}
+            chapters={writeChapters}
+            currentIndex={writeCurrent}
+            error={writeError}
+            demo={planData.demo}
+            onRetry={handleRetryWrite}
+            onBack={handleBackToForm}
+          />
+        ) : stage === 'plan' && planData ? (
+          <PlanReview
+            plan={planData.plan}
+            demo={planData.demo}
+            onApprove={handleApprovePlan}
+            onBack={handleBackToForm}
           />
         ) : activeTab === 'create' ? (
           <GeneratorForm
@@ -134,7 +225,7 @@ export const App: React.FC = () => {
             Novella Forger — Ковка смыслов и метафор
           </p>
           <p className="mt-1 text-stone-600">
-            Правила Хрониста • Модель Gemini 2.5 Flash • Файловый автосейв в stories/output/
+            Правила Хрониста • План → карта имен → письмо потоком • Gemini 2.5 Flash
           </p>
         </div>
       </footer>
