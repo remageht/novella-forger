@@ -8,6 +8,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateNovella } from './gemini.js';
 import { createPlan, writeChapter, buildDemoPlan, splitChapters, hasApiKey, NovellaPlan } from './planner.js';
+import {
+  INTERVIEW_MIN_ANSWERS,
+  INTERVIEW_MAX_QUESTIONS,
+  demoQuestion,
+  demoCompose,
+  generateQuestion,
+  generateStory,
+  InterviewSession,
+  InterviewTurn
+} from './interview.js';
 import { saveNovella, getNovellasList, getNovellaByFilename } from './storage.js';
 import { commitNovella } from './git.js';
 
@@ -66,6 +76,22 @@ const writeLimiter = rateLimit({
   message: { error: 'Слишком много запросов записи. Попробуйте позже.' }
 });
 
+const interviewStartLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Слишком много интервью. Лимит 20 в час с одного IP, попробуйте позже.' }
+});
+
+const interviewAnswerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Слишком много ответов. Попробуйте позже.' }
+});
+
 // Two-phase sessions: plan -> review (правки карты имен) -> write
 interface PlanSession {
   story: string;
@@ -76,10 +102,17 @@ interface PlanSession {
 
 const planSessions = new Map<string, PlanSession>();
 const PLAN_TTL_MS = 30 * 60 * 1000;
+
+const interviewSessions = new Map<string, InterviewSession>();
+const INTERVIEW_TTL_MS = 30 * 60 * 1000;
+
 setInterval(() => {
   const now = Date.now();
   for (const [id, session] of planSessions) {
     if (now - session.createdAt > PLAN_TTL_MS) planSessions.delete(id);
+  }
+  for (const [id, session] of interviewSessions) {
+    if (now - session.createdAt > INTERVIEW_TTL_MS) interviewSessions.delete(id);
   }
 }, 5 * 60 * 1000).unref();
 
@@ -354,6 +387,109 @@ app.post('/api/write', writeLimiter, async (req: Request, res: Response) => {
       send({ type: 'error', message: error.message || 'Ошибка записи новеллы' });
     }
     res.end();
+  }
+});
+
+// POST /api/interview/start (interviewStartLimiter), body { hint? }
+app.post('/api/interview/start', interviewStartLimiter, async (req: Request, res: Response) => {
+  const { hint } = req.body || {};
+  const cleanHint = typeof hint === 'string' ? hint.trim().slice(0, 500) : '';
+
+  try {
+    const demo = !hasApiKey();
+    const question = hasApiKey()
+      ? await generateQuestion(cleanHint, [])
+      : demoQuestion(0);
+
+    const sessionId = crypto.randomUUID();
+    interviewSessions.set(sessionId, {
+      hint: cleanHint,
+      currentQuestion: question,
+      turns: [],
+      createdAt: Date.now()
+    });
+
+    console.log('[Interview] start');
+    res.json({
+      sessionId,
+      question,
+      questionIndex: 1,
+      maxQuestions: INTERVIEW_MAX_QUESTIONS,
+      minAnswers: INTERVIEW_MIN_ANSWERS,
+      demo
+    });
+  } catch (error: any) {
+    console.error('[Interview Start Error]:', error);
+    res.status(500).json({ error: error.message || 'Ошибка запуска интервью' });
+  }
+});
+
+// POST /api/interview/answer (interviewAnswerLimiter), body { sessionId, answer?, finish? }
+app.post('/api/interview/answer', interviewAnswerLimiter, async (req: Request, res: Response) => {
+  const { sessionId, answer, finish } = req.body || {};
+
+  const session = sessionId ? interviewSessions.get(String(sessionId)) : undefined;
+  if (!session) {
+    return res.status(404).json({ error: 'Интервью не найдено или устарело (сессии живут 30 минут).' });
+  }
+
+  const answerText = typeof answer === 'string' ? answer.trim() : '';
+  if (answerText.length > 2000) {
+    return res.status(400).json({ error: 'Ответ слишком длинный (максимум 2000 символов).' });
+  }
+  if (!finish && !answerText) {
+    return res.status(400).json({ error: 'Напишите ответ.' });
+  }
+
+  if (answerText) {
+    session.turns.push({ question: session.currentQuestion, answer: answerText });
+  }
+
+  const shouldFinish = finish === true || session.turns.length >= INTERVIEW_MAX_QUESTIONS;
+
+  if (shouldFinish) {
+    if (session.turns.length < INTERVIEW_MIN_ANSWERS) {
+      return res.status(400).json({ error: 'Ответьте хотя бы на 3 вопроса, чтобы собрать историю.' });
+    }
+
+    try {
+      const demo = !hasApiKey();
+      const story = hasApiKey()
+        ? await generateStory(session.hint, session.turns)
+        : demoCompose(session.turns);
+
+      interviewSessions.delete(String(sessionId));
+      console.log('[Interview] composed');
+      return res.json({
+        done: true,
+        story,
+        answersCount: session.turns.length,
+        demo
+      });
+    } catch (error: any) {
+      console.error('[Interview Compose Error]:', error);
+      return res.status(500).json({ error: error.message || 'Ошибка сборки истории' });
+    }
+  }
+
+  try {
+    const demo = !hasApiKey();
+    const next = hasApiKey()
+      ? await generateQuestion(session.hint, session.turns)
+      : demoQuestion(session.turns.length);
+
+    session.currentQuestion = next;
+    console.log(`[Interview] answer ${session.turns.length}/${INTERVIEW_MAX_QUESTIONS}`);
+    return res.json({
+      done: false,
+      question: next,
+      questionIndex: session.turns.length + 1,
+      maxQuestions: INTERVIEW_MAX_QUESTIONS,
+      demo
+    });
+  } catch (error: any) {
+    console.error('[Interview Question Error]:', error);
+    return res.status(500).json({ error: error.message || 'Ошибка генерации вопроса' });
   }
 });
 

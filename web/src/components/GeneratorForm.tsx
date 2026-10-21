@@ -1,6 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Compass, AlertCircle, FileText, Loader2, Wand2 } from 'lucide-react';
+import {
+  Sparkles,
+  Compass,
+  AlertCircle,
+  FileText,
+  Loader2,
+  Wand2,
+  MessageSquareText,
+  PenLine,
+  X
+} from 'lucide-react';
 import { GENRE_OPTIONS, GenreType } from '../types';
+import { InterviewWizard } from './InterviewWizard';
 
 interface GeneratorFormProps {
   onGenerate: (story: string, genre: GenreType) => Promise<void>;
@@ -29,6 +40,8 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onGenerate, isLoad
   const [story, setStory] = useState('');
   const [genre, setGenre] = useState<GenreType>('авто');
   const [phaseIndex, setPhaseIndex] = useState(0);
+  const [mode, setMode] = useState<'text' | 'interview'>('text');
+  const [interviewDoneNote, setInterviewDoneNote] = useState(false);
 
   // Cycle chronicler loading phases
   useEffect(() => {
@@ -78,48 +91,116 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onGenerate, isLoad
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Textarea */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label htmlFor="story-input" className="text-sm font-medium text-stone-200 flex items-center space-x-1.5">
-                <span>Вставь историю 5+ предложений</span>
-                <span className="text-amber-500">*</span>
-              </label>
-              <div className="flex items-center space-x-3">
-                <button
-                  type="button"
-                  onClick={handleInsertSample}
-                  className="text-xs text-amber-400 hover:text-amber-300 transition-colors inline-flex items-center space-x-1"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Вставить пример</span>
-                </button>
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full font-mono ${
-                    sentenceCount >= 5
-                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
-                      : 'bg-stone-800 text-stone-400 border border-stone-700'
-                  }`}
-                >
-                  {sentenceCount} / 5 предл.
-                </span>
-              </div>
-            </div>
-
-            <textarea
-              id="story-input"
-              rows={8}
-              value={story}
-              onChange={e => setStory(e.target.value)}
-              placeholder="Расскажи реальную историю из жизни: что произошло, кто участвовал, какой был переломный момент и чем всё завершилось..."
-              className="w-full bg-stone-950/80 border border-stone-800 rounded-2xl p-4 text-stone-200 placeholder:text-stone-600 focus:outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/40 text-sm leading-relaxed transition-all resize-y"
+        {/* Mode switch */}
+        <div className="mb-6">
+          <div className="inline-flex items-center space-x-1.5 p-1 bg-stone-950/80 border border-stone-800 rounded-2xl">
+            <button
+              type="button"
               disabled={isLoading}
-              required
-            />
+              onClick={() => setMode('text')}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-medium font-cinzel tracking-wider transition-all ${
+                mode === 'text'
+                  ? 'bg-amber-600 text-white shadow-md shadow-amber-900/30'
+                  : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900'
+              } disabled:opacity-50`}
+            >
+              <PenLine className="w-3.5 h-3.5" />
+              <span>Расскажу текстом</span>
+            </button>
+            <button
+              type="button"
+              disabled={isLoading}
+              onClick={() => {
+                setMode('interview');
+                setInterviewDoneNote(false);
+              }}
+              className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-medium font-cinzel tracking-wider transition-all ${
+                mode === 'interview'
+                  ? 'bg-amber-600 text-white shadow-md shadow-amber-900/30'
+                  : 'text-stone-400 hover:text-stone-200 hover:bg-stone-900'
+              } disabled:opacity-50`}
+            >
+              <MessageSquareText className="w-3.5 h-3.5" />
+              <span>Ответить на вопросы</span>
+            </button>
           </div>
+        </div>
 
-          {/* Genre select */}
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {mode === 'interview' ? (
+            <InterviewWizard
+              onComplete={s => {
+                setStory(s);
+                setMode('text');
+                setInterviewDoneNote(true);
+              }}
+              onCancel={() => setMode('text')}
+            />
+          ) : (
+            <>
+              {/* Green note when story was composed from interview */}
+              {interviewDoneNote && story.trim().length > 0 && (
+                <div className="p-3.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between text-emerald-200 text-xs shadow-lg backdrop-blur">
+                  <div className="flex items-center space-x-2.5">
+                    <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="font-medium">
+                      История собрана из ответов. Проверьте и отредактируйте перед планом.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setInterviewDoneNote(false)}
+                    className="text-emerald-400 hover:text-emerald-200 p-1 rounded-lg transition-colors ml-2"
+                    title="Закрыть"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Textarea */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label htmlFor="story-input" className="text-sm font-medium text-stone-200 flex items-center space-x-1.5">
+                    <span>Вставь историю 5+ предложений</span>
+                    <span className="text-amber-500">*</span>
+                  </label>
+                  <div className="flex items-center space-x-3">
+                    <button
+                      type="button"
+                      onClick={handleInsertSample}
+                      className="text-xs text-amber-400 hover:text-amber-300 transition-colors inline-flex items-center space-x-1"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Вставить пример</span>
+                    </button>
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full font-mono ${
+                        sentenceCount >= 5
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-stone-800 text-stone-400 border border-stone-700'
+                      }`}
+                    >
+                      {sentenceCount} / 5 предл.
+                    </span>
+                  </div>
+                </div>
+
+                <textarea
+                  id="story-input"
+                  rows={8}
+                  value={story}
+                  onChange={e => setStory(e.target.value)}
+                  placeholder="Расскажи реальную историю из жизни: что произошло, кто участвовал, какой был переломный момент и чем всё завершилось..."
+                  className="w-full bg-stone-950/80 border border-stone-800 rounded-2xl p-4 text-stone-200 placeholder:text-stone-600 focus:outline-none focus:border-amber-500/60 focus:ring-1 focus:ring-amber-500/40 text-sm leading-relaxed transition-all resize-y"
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+            </>
+          )}
+
+          {/* Genre select (remains visible in both modes) */}
           <div>
             <label htmlFor="genre-select" className="block text-sm font-medium text-stone-200 mb-2 flex items-center space-x-1.5">
               <Compass className="w-4 h-4 text-amber-400" />
@@ -145,54 +226,59 @@ export const GeneratorForm: React.FC<GeneratorFormProps> = ({ onGenerate, isLoad
             </p>
           </div>
 
-          {/* Submit Button */}
-          <div>
-            <button
-              type="submit"
-              disabled={isLoading || !story.trim()}
-              className="w-full relative group overflow-hidden rounded-2xl p-4 font-semibold text-white shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-500 hover:to-orange-500 active:scale-[0.99] border border-amber-400/30"
-            >
-              <div className="flex items-center justify-center space-x-2.5">
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin text-amber-200" />
-                    <span className="font-cinzel tracking-wider text-base">
-                      Строим план...
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-5 h-5 text-amber-200" />
-                    <span className="font-cinzel tracking-wider text-base">
-                      Построить план новеллы
-                    </span>
-                  </>
-                )}
+          {/* Text-mode only: Submit, phases, and tips */}
+          {mode === 'text' && (
+            <>
+              {/* Submit Button */}
+              <div>
+                <button
+                  type="submit"
+                  disabled={isLoading || !story.trim()}
+                  className="w-full relative group overflow-hidden rounded-2xl p-4 font-semibold text-white shadow-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 hover:from-amber-500 hover:to-orange-500 active:scale-[0.99] border border-amber-400/30"
+                >
+                  <div className="flex items-center justify-center space-x-2.5">
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin text-amber-200" />
+                        <span className="font-cinzel tracking-wider text-base">
+                          Строим план...
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-5 h-5 text-amber-200" />
+                        <span className="font-cinzel tracking-wider text-base">
+                          Построить план новеллы
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </button>
               </div>
-            </button>
-          </div>
 
-          {/* Loading status phases */}
-          {isLoading && (
-            <div className="p-4 rounded-2xl bg-stone-950/90 border border-amber-500/30 text-center animate-pulse">
-              <div className="flex items-center justify-center space-x-2 text-xs font-mono text-amber-300">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>{CHRONICLER_PHASES[phaseIndex]}</span>
-              </div>
-              <p className="text-[11px] text-stone-500 mt-1">
-                Хронист разберет историю и построит план с картой имен — вы проверите и утвердите его перед письмом. Обычно 15-30 секунд.
-              </p>
-            </div>
-          )}
+              {/* Loading status phases */}
+              {isLoading && (
+                <div className="p-4 rounded-2xl bg-stone-950/90 border border-amber-500/30 text-center animate-pulse">
+                  <div className="flex items-center justify-center space-x-2 text-xs font-mono text-amber-300">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>{CHRONICLER_PHASES[phaseIndex]}</span>
+                  </div>
+                  <p className="text-[11px] text-stone-500 mt-1">
+                    Хронист разберет историю и построит план с картой имен — вы проверите и утвердите его перед письмом. Обычно 15-30 секунд.
+                  </p>
+                </div>
+              )}
 
-          {/* Validation tip */}
-          {!isLoading && story.trim().length > 0 && sentenceCount < 5 && (
-            <div className="flex items-center space-x-2 text-xs text-amber-400/90 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>
-                Рекомендуется история от 5 предложений, чтобы Хронист мог выстроить полноценную структуру глав (Врата, Завязка, Трибуляция, Цена, Эпилог).
-              </span>
-            </div>
+              {/* Validation tip */}
+              {!isLoading && story.trim().length > 0 && sentenceCount < 5 && (
+                <div className="flex items-center space-x-2 text-xs text-amber-400/90 bg-amber-500/10 p-3 rounded-xl border border-amber-500/20">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>
+                    Рекомендуется история от 5 предложений, чтобы Хронист мог выстроить полноценную структуру глав (Врата, Завязка, Трибуляция, Цена, Эпилог).
+                  </span>
+                </div>
+              )}
+            </>
           )}
         </form>
       </div>

@@ -45,6 +45,14 @@ jobs:
           curl -sf -X POST http://localhost:3001/api/write \
             -H 'Content-Type: application/json' \
             -d "{\"planId\":\"$PLAN_ID\"}" | grep -q '"type":"done"'
+          IV=$(curl -sf -X POST http://localhost:3001/api/interview/start -H 'Content-Type: application/json' -d '{"hint":"путь к мастерству"}')
+          SID=$(echo "$IV" | jq -r .sessionId)
+          test -n "$SID"
+          for A in "Я работал на заводе" "Наставник научил меня ремеслу" "Партнёр забрал мой проект"; do
+            curl -sf -X POST http://localhost:3001/api/interview/answer -H 'Content-Type: application/json' -d "{\"sessionId\":\"$SID\",\"answer\":\"$A\"}" > /dev/null
+          done
+          FINAL=$(curl -sf -X POST http://localhost:3001/api/interview/answer -H 'Content-Type: application/json' -d "{\"sessionId\":\"$SID\",\"answer\":\"\",\"finish\":true}")
+          echo "$FINAL" | grep -q '"done":true'
 
   docker:
     runs-on: ubuntu-latest

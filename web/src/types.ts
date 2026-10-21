@@ -81,3 +81,21 @@ export type WriteEvent =
   | { type: 'error'; message: string };
 
 export type WriteDoneEvent = Extract<WriteEvent, { type: 'done' }>;
+
+export interface InterviewTurn {
+  question: string;
+  answer: string;
+}
+
+export interface InterviewStartResponse {
+  sessionId: string;
+  question: string;
+  questionIndex: number;
+  maxQuestions: number;
+  minAnswers: number;
+  demo: boolean;
+}
+
+export type InterviewAnswerResponse =
+  | { done: false; question: string; questionIndex: number; maxQuestions: number; demo: boolean }
+  | { done: true; story: string; answersCount: number; demo: boolean };

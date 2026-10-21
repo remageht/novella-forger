@@ -1,4 +1,13 @@
-import { GenerateResponse, NovellaItem, NameMapItem, PlanResponse, WriteEvent, WriteDoneEvent } from './types';
+import {
+  GenerateResponse,
+  NovellaItem,
+  NameMapItem,
+  PlanResponse,
+  WriteEvent,
+  WriteDoneEvent,
+  InterviewStartResponse,
+  InterviewAnswerResponse
+} from './types';
 
 const GENERATE_TIMEOUT_MS = 10 * 60 * 1000;
 const PLAN_TIMEOUT_MS = 3 * 60 * 1000;
@@ -26,6 +35,73 @@ export async function createPlanApi(story: string, genre: string): Promise<PlanR
   } catch (error: any) {
     if (error?.name === 'AbortError') {
       throw new Error('Превышено время ожидания построения плана (3 минуты). Попробуйте ещё раз.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const START_INTERVIEW_TIMEOUT_MS = 60_000;
+const ANSWER_INTERVIEW_TIMEOUT_MS = 90_000;
+
+export async function startInterviewApi(hint?: string): Promise<InterviewStartResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), START_INTERVIEW_TIMEOUT_MS);
+
+  try {
+    const response = await fetch('/api/interview/start', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ hint }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Ошибка сервера (${response.status})`);
+    }
+
+    return response.json();
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Превышено время ожидания начала интервью (60 секунд). Попробуйте ещё раз.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function answerInterviewApi(
+  sessionId: string,
+  answer: string,
+  finish = false
+): Promise<InterviewAnswerResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ANSWER_INTERVIEW_TIMEOUT_MS);
+
+  try {
+    const response = await fetch('/api/interview/answer', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ sessionId, answer, finish }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || `Ошибка сервера (${response.status})`);
+    }
+
+    return response.json();
+  } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Превышено время ожидания ответа интервью (90 секунд). Попробуйте ещё раз.');
     }
     throw error;
   } finally {
